@@ -28,5 +28,4 @@ torch==2.2.2
 Pillow==9.5.0
 opencv-python==4.7.0.72
 ultralytics==8.0.55
-torchvision==0.17.2+cpu
-torchaudio==2.2.2+cpu
+
