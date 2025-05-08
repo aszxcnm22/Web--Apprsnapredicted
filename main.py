@@ -1,10 +1,8 @@
 from fastapi import FastAPI, Request, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
 import os
-from fastapi.responses import RedirectResponse
 import base64
 import numpy as np
 import pandas as pd
@@ -94,7 +92,7 @@ async def predict_OP(data: dict):
 
         yNew_OP = maxtwoind_mammo_OP(outputNew_OP)
         predictionsNew_OP = maxtwoindclass_mammo_OP(yNew_OP)
-        confidence_OP = np.max(outputNew_OP) * 100  # แปลงเป็นเปอร์เซ็นต์
+        confidence_OP = np.max(outputNew_OP) * 100
 
         prediction = predictionsNew_OP[0] if predictionsNew_OP.size > 0 else 0
 
@@ -118,7 +116,7 @@ async def predict_OP(data: dict):
 @app.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request):
     return templates.TemplateResponse("NEW.html", {"request": request})
-    
+
 def image_to_base64(image_path: str):
     image = Image.open(image_path)
     buffered = BytesIO()
@@ -143,23 +141,19 @@ async def predict_rsna_html(request: Request, file: UploadFile = File(...)):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         if results[0].masks is not None and len(results[0].boxes) > 0:
-            # ดึงกล่องและชื่อคลาส
             boxes = results[0].boxes.xyxy.cpu().numpy()
             scores = results[0].boxes.conf.cpu().numpy()
             class_ids = results[0].boxes.cls.cpu().numpy().astype(int)
             names = results[0].names
 
-            # วาดกล่องและ label
             for i, box in enumerate(boxes):
                 x1, y1, x2, y2 = map(int, box)
                 class_name = names[class_ids[i]] if names and class_ids[i] < len(names) else str(class_ids[i])
                 label = f"{class_name}: {scores[i]*100:.2f}%"
-
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
                 cv2.putText(image, label, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
-            # ตัดเฉพาะวัตถุแรกเพื่อส่งเข้า VGG19
             x1, y1, x2, y2 = map(int, boxes[0])
             cropped = image[y1:y2, x1:x2]
             cropped_pil = Image.fromarray(cropped)
@@ -185,7 +179,6 @@ async def predict_rsna_html(request: Request, file: UploadFile = File(...)):
                 "image_path": f"data:image/jpeg;base64,{base64.b64encode(contents).decode()}"
             })
 
-        # ELM Inference
         input_weight = pd.read_csv('./Data/RSNA/RSNA_Augment_96/input_weight.csv', header=None).values
         output_weight = pd.read_csv('./Data/RSNA/RSNA_Augment_96/output_weight.csv', header=None).values
 
@@ -196,7 +189,6 @@ async def predict_rsna_html(request: Request, file: UploadFile = File(...)):
         pred_class = np.argmax(output, axis=1)[0]
         confidence = np.max(output[0]) / np.sum(output[0])
 
-        # แปลงภาพที่วาดแล้วกลับเป็น base64
         pil_img = Image.fromarray(image)
         buffer = BytesIO()
         pil_img.save(buffer, format="JPEG")
@@ -217,8 +209,6 @@ async def predict_rsna_html(request: Request, file: UploadFile = File(...)):
             "error": str(e)
         })
 
-
-    
 @app.get("/js/{file_path:path}")
 async def serve_js(file_path: str):
     return FileResponse(f"static/js/{file_path}")
@@ -230,3 +220,9 @@ async def serve_css(file_path: str):
 @app.get("/img/{file_path:path}")
 async def serve_img(file_path: str):
     return FileResponse(f"static/img/{file_path}")
+
+# === เพิ่มสำหรับ Render ให้เห็นว่ามี port ถูก bind ===
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
